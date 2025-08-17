@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gorgeous Event Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(to right, #f0f4ff, #fff);
+      margin: 0;
+      padding: 30px;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #1f2937;
+      font-size: 36px;
+      margin-bottom: 40px;
+    }
+
+    .section {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .section h2 {
+      font-size: 24px;
+      color: #3b82f6;
+      margin-bottom: 16px;
+    }
+
+    button, input[type="text"], select {
+      padding: 10px 16px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      margin-right: 10px;
+    }
+
+    button {
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎯 Interactive Event Tracking Page</h1>
+
+  <div class="section">
+    <h2>🔥 Button Interactions</h2>
+    <button onclick="trackEvent('Clicked Subscribe Button')">Subscribe</button>
+    <button onclick="trackEvent('Clicked Like Button')">Like</button>
+    <button onclick="trackEvent('Clicked Download Button')">Download</button>
+  </div>
+
+  <div class="section">
+    <h2>🧾 Form Submission</h2>
+    <form onsubmit="handleFormSubmit(event)">
+      <input type="text" id="feedback" placeholder="Your feedback here..." required />
+      <button type="submit">Submit Feedback</button>
+    </form>
+  </div>
+
+  <div class="section">
+    <h2>🔄 Dropdown Selection</h2>
+    <select onchange="trackEvent('Selected: ' + this.value)">
+      <option disabled selected>Select a topic</option>
+      <option value="Performance">Performance</option>
+      <option value="Security">Security</option>
+      <option value="Design">Design</option>
+    </select>
+  </div>
+
+  <script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import {
+    getFirestore,
+    collection,
+    addDoc
+  } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import {
+    getAuth,
+    signInAnonymously,
+    onAuthStateChanged
+  } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyC0SqV1AdhuXazfD2avca1kgpeY1lW4OO0",
+    authDomain: "analytics-project-fdf38.firebaseapp.com",
+    projectId: "analytics-project-fdf38",
+    storageBucket: "analytics-project-fdf38.appspot.com",
+    messagingSenderId: "859589794211",
+    appId: "1:859589794211:web:bc4ff59ee2a6fe51e32216"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth();
+
+  let userId = null;
+
+  const sessionId = localStorage.getItem("sessionId") || generateSessionId();
+  localStorage.setItem("sessionId", sessionId);
+
+  function generateSessionId() {
+    return 'sess-' + Math.random().toString(36).substring(2, 9);
+  }
+
+  // 🔐 Anonymous Sign-in
+  signInAnonymously(auth)
+    .then(() => {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          userId = user.uid;
+          console.log("✅ Signed in as:", userId);
+          trackPageView(); // Track the page load
+          // ✅ Make Firebase globally available
+        window.addDoc = addDoc;
+        window.collection = collection;
+        window.db = db;
+        window.userId = userId;
+        window.sessionId = sessionId;
+        window.getDeviceInfo = getDeviceInfo;
+
+        // ✅ Now it's safe to call this
+        updateFunnelPath(window.location.pathname);
+
+        }
+      });
+    })
+    .catch((error) => {
+      console.error("Auth error:", error);
+    });
+
+  // 📈 Track Page View
+  async function trackPageView() {
+    try {
+      await addDoc(collection(db, "events"), {
+        userId,
+        sessionId,
+        type: "page_view",
+        page: window.location.pathname,
+        timestamp: new Date(),
+        device: getDeviceInfo()
+      });
+      console.log("📄 Page view tracked");
+    } catch (e) {
+      console.error("Error tracking page view:", e);
+    }
+  }
+
+
+
+function updateFunnelPath(currentPage) {
+  // Get existing path list from localStorage
+  let history = JSON.parse(localStorage.getItem("pagePathHistory")) || [];
+
+  // Avoid duplicate consecutive entries
+  if (history[history.length - 1] !== currentPage) {
+    history.push(currentPage);
+    localStorage.setItem("pagePathHistory", JSON.stringify(history));
+  }
+
+  // Send to Firestore
+  window.addDoc(window.collection(window.db, "events"), {
+    userId,
+    sessionId,
+    type: "funnel_step",
+    step: history.length,
+    path: [...history],  // full path so far
+    currentPage: currentPage,
+    timestamp: new Date(),
+    device: window.getDeviceInfo()
+  }).then(() => {
+    console.log("📊 Funnel step logged:", history);
+  }).catch((e) => {
+    console.error("Error logging funnel step:", e);
+  });
+}
+
+
+
+  // 📌 Track any interaction
+  async function trackEvent(label) {
+    const eventData = {
+      userId,
+      sessionId,
+      type: "click",
+      label,
+      page: window.location.pathname,
+      timestamp: new Date(),
+      device: getDeviceInfo()
+    };
+
+    console.log("📩 Tracking event:", eventData);
+    try {
+      await addDoc(collection(db, "events"), eventData);
+    } catch (e) {
+      console.error("Error tracking event:", e);
+    }
+  }
+
+  // 📩 Handle form submit
+  async function handleFormSubmit(e) {
+    e.preventDefault();
+    const feedback = document.getElementById("feedback").value;
+    await trackEvent(`Submitted Feedback: ${feedback}`);
+    alert("✅ Feedback submitted!");
+    e.target.reset();
+  }
+
+  function getDeviceInfo() {
+    const ua = navigator.userAgent;
+    const isMobile = /Mobile|Android|iPhone/i.test(ua);
+    const browser = navigator.userAgentData?.brands?.[0]?.brand || "Unknown";
+    return {
+      deviceType: isMobile ? "Mobile" : "Desktop",
+      userAgent: ua,
+      browser
+    };
+  }
+
+  // Make trackEvent globally available to inline HTML
+  window.trackEvent = trackEvent;
+  window.handleFormSubmit = handleFormSubmit;
+
+  // ✅ Expose Firebase utils to global scope for non-module scripts
+window.addDoc = addDoc;
+window.collection = collection;
+window.db = db;
+window.userId = userId;
+window.sessionId = sessionId;
+window.getDeviceInfo = getDeviceInfo;
+
+</script>
+
+<script>
+  // Scroll tracking
+  const scrollThresholds = [25, 50, 75, 100];
+  const trackedScrolls = new Set();
+
+  window.addEventListener("scroll", () => {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const scrollPercent = Math.floor((scrollTop / docHeight) * 100);
+
+    scrollThresholds.forEach(threshold => {
+      if (scrollPercent >= threshold && !trackedScrolls.has(threshold)) {
+        trackedScrolls.add(threshold);
+        logScrollDepth(threshold);
+      }
+    });
+  });
+
+  async function logScrollDepth(threshold) {
+    try {
+      await addDoc(collection(db, "events"), {
+        userId,
+        sessionId,
+        type: "scroll-depth",
+        threshold,
+        page: window.location.pathname,
+        timestamp: new Date(),
+        device: getDeviceInfo()
+      });
+      console.log(`🌀 Scroll depth ${threshold}% logged.`);
+    } catch (e) {
+      console.error("Error logging scroll depth:", e);
+    }
+  }
+</script>
+
+<script>
+  let startTime = Date.now();
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "hidden") {
+      const endTime = Date.now();
+      const timeSpentSeconds = Math.floor((endTime - startTime) / 1000);
+
+      try {
+        await window.addDoc(window.collection(window.db, "events"), {
+          userId: window.userId,
+          sessionId: window.sessionId,
+          type: "time_on_page",
+          duration_seconds: timeSpentSeconds,
+          page: window.location.pathname,
+          timestamp: new Date(),
+          device: window.getDeviceInfo()
+        });
+        console.log(`⏱️ Time on page logged: ${timeSpentSeconds}s`);
+      } catch (e) {
+        console.error("Error logging time on page:", e);
+      }
+    }
+  });
+</script>
+
+
+
+</body>
+</html>

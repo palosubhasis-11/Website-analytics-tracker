@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Event Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #f9f9f9, #e0ecff);
+      color: #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 600px;
+      width: 100%;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 2rem;
+      color: #222;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    @media (min-width: 600px) {
+      .card-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .card {
+      background-color: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+      text-decoration: none;
+      color: #333;
+      font-weight: 500;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+  </style>
+</head>
+
+  <body>
+  <div class="container">
+    <h1>Welcome to My Website</h1>
+    <p>Scroll and interact with the buttons below:</p>
+    <div class="card-grid">
+      <a href="#" class="card" onclick="trackClick('signup_button')">Sign Up</a>
+      <a href="#" class="card" onclick="trackClick('contact_us_button')">Contact Us</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+    apiKey: "AIzaSyC0SqV1AdhuXazfD2avca1kgpeY1lW4OO0",
+    authDomain: "analytics-project-fdf38.firebaseapp.com",
+    projectId: "analytics-project-fdf38",
+    storageBucket: "analytics-project-fdf38.firebasestorage.app",
+    messagingSenderId: "859589794211",
+    appId: "1:859589794211:web:bc4ff59ee2a6fe51e32216"
+  };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth();
+
+    let userId = null;
+
+    // Generate a unique session ID (timestamp + random)
+const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+console.log("Session ID:", sessionId);
+
+
+    signInAnonymously(auth)
+      .then(() => {
+        onAuthStateChanged(auth, (user) => {
+          if (user) {
+            userId = user.uid;
+            console.log("Signed in as:", userId);
+            trackPageView();  // <-- track page view once logged in
+          
+           window.addDoc = addDoc;
+        window.collection = collection;
+        window.db = db;
+        window.userId = userId;
+        window.sessionId = sessionId;
+        window.getDeviceInfo = getDeviceInfo;
+
+        // ✅ Now it's safe to call this
+        updateFunnelPath(window.location.pathname);
+
+          }
+        });
+      })
+      .catch((error) => {
+        console.error("Auth Error:", error);
+      });
+
+    // 🔹 Track Button Clicks
+    window.trackClick = async function (buttonName) {
+  if (!userId) {
+    console.warn("User not signed in yet. Try again.");
+    return;
+  }
+
+  const eventData = {
+    userId,
+    sessionId,
+    type: "click",
+    label: buttonName,
+    page: window.location.pathname,
+    timestamp: new Date(),
+    device: getDeviceInfo()
+  };
+
+  console.log("Click Event:", eventData);  // 🔍 See exactly what's being sent
+
+  try {
+    await addDoc(collection(db, "events"), eventData);
+    console.log("Click tracked:", buttonName);
+  } catch (e) {
+    console.error("Error tracking click:", e);
+  }
+}
+
+
+    // 🔹 Track Page View
+    async function trackPageView() {
+      try {
+        await addDoc(collection(db, "events"), {
+          userId,
+          sessionId,
+          type: "page_view",
+          page: window.location.pathname,
+          timestamp: new Date(),
+          device: getDeviceInfo()
+        });
+        console.log("Page view tracked!");
+      } catch (e) {
+        console.error("Error tracking page view:", e);
+      }
+    }
+
+
+
+function updateFunnelPath(currentPage) {
+  // Get existing path list from localStorage
+  let history = JSON.parse(localStorage.getItem("pagePathHistory")) || [];
+
+  // Avoid duplicate consecutive entries
+  if (history[history.length - 1] !== currentPage) {
+    history.push(currentPage);
+    localStorage.setItem("pagePathHistory", JSON.stringify(history));
+  }
+
+  // Send to Firestore
+  window.addDoc(window.collection(window.db, "events"), {
+    userId,
+    sessionId,
+    type: "funnel_step",
+    step: history.length,
+    path: [...history],  // full path so far
+    currentPage: currentPage,
+    timestamp: new Date(),
+    device: window.getDeviceInfo()
+  }).then(() => {
+    console.log("📊 Funnel step logged:", history);
+  }).catch((e) => {
+    console.error("Error logging funnel step:", e);
+  });
+}
+
+
+
+    // to get the device info() 
+function getDeviceInfo() {
+  const ua = navigator.userAgent;
+  const isMobile = /Mobile|Android|iPhone/i.test(ua);
+  const browser = navigator.userAgentData?.brands?.[0]?.brand || "Unknown";
+  return {
+    deviceType: isMobile ? "Mobile" : "Desktop",
+    userAgent: ua,
+    browser: browser
+  };
+}
+
+
+
+  </script>
+
+
+<script>
+  // Scroll tracking
+  const scrollThresholds = [25, 50, 75, 100];
+  const trackedScrolls = new Set();
+
+
+function startScrollTracking() {
+  window.addEventListener("scroll", () => {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const scrollPercent = Math.floor((scrollTop / docHeight) * 100);
+
+    scrollThresholds.forEach(threshold => {
+      if (scrollPercent >= threshold && !trackedScrolls.has(threshold)) {
+        trackedScrolls.add(threshold);
+        logScrollDepth(threshold);
+      }
+    });
+  });
+}
+
+
+  async function logScrollDepth(threshold) {
+    try {
+      await window.addDoc(window.collection(window.db, "events"), {
+
+        userId: window.userId,
+        sessionId: window.sessionId,
+        type: "scroll-depth",
+        threshold,
+        page: window.location.pathname,
+        timestamp: new Date(),
+        device: getDeviceInfo()
+      });
+      console.log(`🌀 Scroll depth ${threshold}% logged.`);
+    } catch (e) {
+      console.error("Error logging scroll depth:", e);
+    }
+  }
+
+
+const waitForFirebase = setInterval(() => {
+    if (window.addDoc && window.collection && window.db && window.userId && window.getDeviceInfo) {
+      clearInterval(waitForFirebase);
+      startScrollTracking(); // ✅ Now it's safe to start
+    }
+  }, 200);
+
+</script>
+
+<script>
+  let startTime = Date.now();
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "hidden") {
+      const endTime = Date.now();
+      const timeSpentSeconds = Math.floor((endTime - startTime) / 1000);
+
+      try {
+        await window.addDoc(window.collection(window.db, "events"), {
+          userId: window.userId,
+          sessionId: window.sessionId,
+          type: "time_on_page",
+          duration_seconds: timeSpentSeconds,
+          page: window.location.pathname,
+          timestamp: new Date(),
+          device: window.getDeviceInfo()
+        });
+        console.log(`⏱️ Time on page logged: ${timeSpentSeconds}s`);
+      } catch (e) {
+        console.error("Error logging time on page:", e);
+      }
+    }
+  });
+</script>
+
+
+
+</body>
+
+
+  
+</html>
+
+
